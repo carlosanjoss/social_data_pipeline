@@ -20,13 +20,17 @@ import time
 from config import setup_logging, get_logger
 from database.mongo import close_client as close_mongo
 from database.postgres import get_conn, close_conn, create_tables
-from etl.load_postgres import run_load, LoadResult
-from repositories.comments import resolve_post_fks
+from etl.load_postgres import run_load, finalize_comments, LoadResult, AnchorResult
 
 logger = get_logger(__name__)
 
 
-def print_report(results: list[LoadResult], fk_resolved: int, total_s: float) -> None:
+def print_report(
+    results: list[LoadResult],
+    anchors: list[AnchorResult],
+    fk_resolved: int,
+    total_s: float,
+) -> None:
     print("\n" + "=" * 65)
     print("LOAD POSTGRES -- RELATORIO")
     print("=" * 65)
@@ -50,6 +54,17 @@ def print_report(results: list[LoadResult], fk_resolved: int, total_s: float) ->
 
     total_ins = sum(r.inserted for r in results)
     total_mod = sum(r.modified for r in results)
+
+    if anchors:
+        print("\n[POSTS-ÂNCORA recuperados para comentários órfãos]")
+        for a in anchors:
+            if a.requested == 0:
+                continue
+            print(
+                f"  {a.platform:10s}  pais={a.requested:5d}  inseridos={a.inserted:5d}  "
+                f"ausentes_no_mongo={a.missing_in_mongo:5d}  erros={a.errors}"
+            )
+
     print(f"\n  FKs resolvidas (comments.post_pk): {fk_resolved}")
     print(f"\n  TOTAL  inseridos={total_ins}  atualizados={total_mod}  tempo={total_s:.1f}s")
     print("=" * 65)
@@ -65,11 +80,10 @@ def main(platforms: list[str] | None = None) -> int:
 
     results = run_load(conn, platforms)
 
-    fk_resolved = resolve_post_fks(conn)
-    logger.info("post_fks_resolved", count=fk_resolved)
+    anchors, fk_resolved = finalize_comments(conn, platforms)
 
     elapsed = time.perf_counter() - t0
-    print_report(results, fk_resolved, elapsed)
+    print_report(results, anchors, fk_resolved, elapsed)
 
     close_mongo()
     close_conn()
@@ -83,7 +97,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--platforms", nargs="+",
         choices=[
-            "reddit", "twitter", "youtube", "facebook", "tiktok",
+            "reddit", "twitter", "youtube", "facebook", "instagram", "tiktok",
             "whatsapp", "telegram",
         ],
         help="Plataformas a carregar (padrao: todas)",

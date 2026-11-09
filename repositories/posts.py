@@ -13,14 +13,14 @@ INSERT INTO posts (
     published_at, like_count, share_count, comment_count,
     retweet_count, reply_count, quote_count, view_count,
     quality_score, quality_flags, is_usable,
-    source_system, mongo_id, collected_at
+    source_system, mongo_id, collected_at, is_anchor
 ) VALUES (
     %(platform)s, %(external_id)s, %(content_type)s,
     %(title)s, %(text)s, %(url)s, %(author)s, %(author_id)s, %(language)s,
     %(published_at)s, %(like_count)s, %(share_count)s, %(comment_count)s,
     %(retweet_count)s, %(reply_count)s, %(quote_count)s, %(view_count)s,
     %(quality_score)s, %(quality_flags)s, %(is_usable)s,
-    %(source_system)s, %(mongo_id)s, %(collected_at)s
+    %(source_system)s, %(mongo_id)s, %(collected_at)s, %(is_anchor)s
 )
 ON CONFLICT (platform, external_id) DO UPDATE SET
     content_type  = EXCLUDED.content_type,
@@ -43,7 +43,8 @@ ON CONFLICT (platform, external_id) DO UPDATE SET
     is_usable     = EXCLUDED.is_usable,
     source_system = EXCLUDED.source_system,
     mongo_id      = EXCLUDED.mongo_id,
-    collected_at  = EXCLUDED.collected_at
+    collected_at  = EXCLUDED.collected_at,
+    is_anchor     = EXCLUDED.is_anchor
 RETURNING id, (xmax = 0) AS inserted
 """
 
@@ -133,6 +134,7 @@ def upsert_posts(
 
     with conn.cursor() as cur:
         for base, ext in rows:
+            base.setdefault("is_anchor", False)
             cur.execute(_UPSERT_POST, base)
             row = cur.fetchone()
             post_id, was_inserted = row[0], row[1]

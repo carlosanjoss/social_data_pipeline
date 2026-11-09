@@ -16,7 +16,7 @@ def upsert_one(collection: Collection, document: dict[str, Any]) -> str:
         "platform":    document["platform"],
         "external_id": document["external_id"],
     }
-    document.setdefault("collected_at", datetime.now(timezone.utc))
+    document["collected_at"] = document.get("collected_at") or datetime.now(timezone.utc)
     result = collection.update_one(
         filter_,
         {"$set": document},
@@ -38,7 +38,7 @@ def upsert_many(collection: Collection, documents: list[dict[str, Any]]) -> dict
     ops = [
         UpdateOne(
             {"platform": doc["platform"], "external_id": doc["external_id"]},
-            {"$set": {**doc, "collected_at": doc.get("collected_at", now)}},
+            {"$set": {**doc, "collected_at": doc.get("collected_at") or now}},
             upsert=True,
         )
         for doc in documents

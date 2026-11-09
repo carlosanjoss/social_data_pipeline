@@ -37,7 +37,7 @@ def normalize_post(doc: dict) -> tuple[dict, dict]:
         "quote_count":   _int(n.get("quote_count")),
         "view_count":    _int(n.get("view_count")),
         "quality_score": quality.get("score"),
-        "quality_flags": quality.get("flags") or [],
+        "quality_flags": _clean(quality.get("flags") or []),
         "is_usable":     quality.get("is_usable"),
         "source_system": _str(doc.get("source_system")),
         "mongo_id":      str(doc.get("_id", "")),
@@ -59,7 +59,7 @@ def _ext_row(platform: str, n: dict) -> dict:
         return {
             "conversation_id": _str(n.get("conversation_id")),
             "group_name":      _str(n.get("group_name")),
-            "hashtags":        n.get("hashtags") or [],
+            "hashtags":        _clean(n.get("hashtags") or []),
         }
     if platform == "youtube":
         return {
@@ -68,14 +68,14 @@ def _ext_row(platform: str, n: dict) -> dict:
             "description":   _str(n.get("description")),
             "duration":      _str(n.get("duration")),
             "thumbnail_url": _str(n.get("thumbnail_url")),
-            "tags":          n.get("tags") or [],
+            "tags":          _clean(n.get("tags") or []),
         }
     if platform == "facebook":
         return {
             "page_id":    _str(n.get("page_id")),
             "page_slug":  _str(n.get("page_slug")),
-            "reactions":  Jsonb(n.get("reactions") or {}),
-            "media_types": n.get("media_types") or [],
+            "reactions":  Jsonb(_clean(n.get("reactions") or {})),
+            "media_types": _clean(n.get("media_types") or []),
         }
     if platform == "tiktok":
         return {
@@ -96,8 +96,19 @@ def _ext_row(platform: str, n: dict) -> dict:
 def _str(v) -> str | None:
     if v is None:
         return None
-    s = str(v).strip()
+    s = str(v).replace("\x00", "").strip()
     return s or None
+
+
+def _clean(value):
+    """Remove bytes NUL (0x00) recursivamente — PostgreSQL não os aceita em text."""
+    if isinstance(value, str):
+        return value.replace("\x00", "")
+    if isinstance(value, dict):
+        return {k: _clean(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_clean(v) for v in value]
+    return value
 
 
 def _int(v) -> int | None:

@@ -71,6 +71,7 @@ class YouTubeConnector(BaseConnector):
                     "external_id":  video_id,
                     "content_type": "video",
                     "source_system": "youtube_scraper",
+                    "collected_at":  raw.get("collected_at"),
                     "raw":          raw,
                     "normalized": {
                         # scraper uses video_title / video_description
@@ -104,6 +105,7 @@ class YouTubeConnector(BaseConnector):
                     continue
 
                 video_id = video_dir.name
+                video_data = self._load_json(video_dir / "video.json") or {}
                 comments_data = self._load_json(video_dir / "comments.json")
                 if not comments_data:
                     continue
@@ -123,6 +125,7 @@ class YouTubeConnector(BaseConnector):
                         "external_id":  comment_id,
                         "content_type": content_type,
                         "source_system": "youtube_scraper",
+                        "collected_at":  raw.get("collected_at") or video_data.get("collected_at"),
                         "raw":          raw,
                         "normalized": {
                             "text":         raw.get("text") or raw.get("textDisplay"),

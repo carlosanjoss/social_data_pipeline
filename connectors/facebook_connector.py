@@ -163,6 +163,7 @@ class FacebookConnector(BaseConnector):
                 "external_id":  post_id,
                 "content_type": "post",
                 "source_system": "facebook_scrapper",
+                "collected_at":  raw.get("collected_at") or raw.get("last_collected_at"),
                 "raw":          raw,
                 "normalized": {
                     "text":         raw.get("text") or raw.get("content"),
@@ -206,6 +207,7 @@ class FacebookConnector(BaseConnector):
                     "external_id":  comment_id,
                     "content_type": "comment",
                     "source_system": "facebook_scrapper",
+                    "collected_at":  comment.get("collected_at") or raw_post.get("collected_at"),
                     "raw":          comment,
                     "normalized": {
                         "text":       comment.get("text") or comment.get("body"),
@@ -233,6 +235,7 @@ class FacebookConnector(BaseConnector):
                         "external_id":  reply_id,
                         "content_type": "reply",
                         "source_system": "facebook_scrapper",
+                        "collected_at":  reply.get("collected_at") or raw_post.get("collected_at"),
                         "raw":          reply,
                         "normalized": {
                             "text":       reply.get("text") or reply.get("body"),

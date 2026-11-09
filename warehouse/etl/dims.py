@@ -65,6 +65,7 @@ def load_dim_platform(conn: DuckDBPyConnection) -> int:
         (5, "tiktok",   "TikTok"),
         (6, "whatsapp", "WhatsApp"),
         (7, "telegram", "Telegram"),
+        (8, "instagram","Instagram"),
     ]
     conn.executemany(
         "INSERT OR IGNORE INTO dim_platform VALUES (?,?,?)", rows

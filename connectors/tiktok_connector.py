@@ -22,8 +22,9 @@ def _published_at_from_aweme_id(aweme_id: str) -> str | None:
 
 class TikTokConnector(BaseConnector):
     """
-    Walks the TikTok scraper output directory:
+    Walks both supported TikTok scraper layouts:
         tiktok_data_path/<aweme_id>.json
+        tiktok_data_path/profiles/<username>/<aweme_id>.json
 
     Each file contains one video with its top-level comments and nested replies.
     iter_posts()    → yields each video as a post document
@@ -37,7 +38,11 @@ class TikTokConnector(BaseConnector):
         if not self.data_path.exists():
             logger.warning("tiktok_data_dir_not_found", path=str(self.data_path))
             return []
-        return sorted(self.data_path.glob("*.json"))
+        files = list(self.data_path.glob("[0-9]*.json"))
+        profiles_root = self.data_path / "profiles"
+        if profiles_root.exists():
+            files.extend(profiles_root.glob("*/[0-9]*.json"))
+        return sorted(set(files))
 
     def _load_json(self, path: Path) -> dict | None:
         try:
@@ -61,6 +66,7 @@ class TikTokConnector(BaseConnector):
                 "external_id":  aweme_id,
                 "content_type": "video",
                 "source_system": "tiktok_scrapper",
+                "collected_at":  raw.get("scraped_at"),
                 "raw":          raw,
                 "normalized": {
                     "title":         caption,
@@ -111,6 +117,7 @@ class TikTokConnector(BaseConnector):
                 "external_id":  comment_id,
                 "content_type": content_type,
                 "source_system": "tiktok_scrapper",
+                "collected_at":  collected_at,
                 "raw":          c,
                 "normalized": {
                     "text":         c.get("comment"),

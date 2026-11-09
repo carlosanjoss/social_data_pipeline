@@ -15,6 +15,7 @@ services:
       - "${MONGO_PORT:-27017}:27017"
     volumes:
       - mongo_data:/data/db
+      - ../BACKUP_COMPLETO_2026-08-14_11-12-17:/backups:ro
     networks:
       - radar_network
     healthcheck:
@@ -35,7 +36,7 @@ services:
       - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/postgres/migrations:/docker-entrypoint-initdb.d:ro
+      - ../BACKUP_COMPLETO_2026-08-14_11-12-17:/backups:ro
     networks:
       - radar_network
     healthcheck:
@@ -131,4 +132,5 @@ volumes:
 
 networks:
   radar_network:
+    name: radar_network
     driver: bridge

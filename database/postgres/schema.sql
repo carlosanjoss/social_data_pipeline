@@ -2,6 +2,16 @@
 -- Radar Ódio — PostgreSQL Schema (IS-A)
 -- ============================================================
 
+-- Migração idempotente: garante is_anchor em bancos criados antes da coluna.
+-- (Em banco novo a coluna já nasce no CREATE TABLE posts abaixo.)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema = current_schema() AND table_name = 'posts') THEN
+        ALTER TABLE posts ADD COLUMN IF NOT EXISTS is_anchor BOOLEAN NOT NULL DEFAULT FALSE;
+    END IF;
+END $$;
+
 -- ------------------------------------------------------------
 -- Base table: posts
 -- ------------------------------------------------------------
@@ -30,6 +40,9 @@ CREATE TABLE IF NOT EXISTS posts (
     source_system   VARCHAR(50),
     mongo_id        VARCHAR(30),
     collected_at    TIMESTAMPTZ,
+    -- TRUE = post-âncora: existe apenas para dar suporte à FK de comentários
+    -- cujo post pai não entrou no corpus pt-BR. Pode ter language <> 'pt-BR'.
+    is_anchor       BOOLEAN NOT NULL DEFAULT FALSE,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     CONSTRAINT uq_posts_platform_ext UNIQUE (platform, external_id)
 );
@@ -38,6 +51,7 @@ CREATE INDEX IF NOT EXISTS idx_posts_platform        ON posts (platform);
 CREATE INDEX IF NOT EXISTS idx_posts_published_at    ON posts (published_at);
 CREATE INDEX IF NOT EXISTS idx_posts_is_usable       ON posts (is_usable);
 CREATE INDEX IF NOT EXISTS idx_posts_language        ON posts (language);
+CREATE INDEX IF NOT EXISTS idx_posts_is_anchor       ON posts (is_anchor);
 
 -- ------------------------------------------------------------
 -- Extension: reddit_posts

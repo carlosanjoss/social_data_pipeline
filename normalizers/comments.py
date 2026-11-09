@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .posts import _str, _int, _dt
+from .posts import _str, _int, _dt, _clean
 
 
 def normalize_comment(doc: dict) -> tuple[dict, dict]:
@@ -33,7 +33,7 @@ def normalize_comment(doc: dict) -> tuple[dict, dict]:
         "like_count":         _int(n.get("like_count")),
         "reply_count":        _int(n.get("reply_count")),
         "quality_score":      quality.get("score"),
-        "quality_flags":      quality.get("flags") or [],
+        "quality_flags":      _clean(quality.get("flags") or []),
         "is_usable":          quality.get("is_usable"),
         "source_system":      _str(doc.get("source_system")),
         "mongo_id":           str(doc.get("_id", "")),

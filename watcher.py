@@ -27,6 +27,7 @@ PLATFORM_PATHS: dict[str, list[Path]] = {
     "twitter":  [Path(settings.twitter_data_path)],
     "youtube":  [Path(settings.youtube_data_path)],
     "facebook": [Path(settings.facebook_data_path)],
+    "instagram":[Path(settings.instagram_data_path)],
     "tiktok":   [Path(settings.tiktok_data_path)],
     "whatsapp": [Path(settings.farol_exports_path)],
     "telegram": [Path(settings.farol_exports_path)],
@@ -53,7 +54,7 @@ def _run_platform(platform: str) -> bool:
     """Executa as três etapas do pipeline para uma plataforma. Retorna True se ok."""
     from pipelines.ingest_historical import ingest_platform
     from pipelines.load_postgres import run_load as pg_load
-    from repositories.comments import resolve_post_fks
+    from etl.load_postgres import finalize_comments
     from database.postgres.client import get_conn, close_conn
     from warehouse.load import run_load as dw_load
 
@@ -67,8 +68,7 @@ def _run_platform(platform: str) -> bool:
     pg_load(platforms=[platform])
 
     conn = get_conn()
-    resolve_post_fks(conn)
-    conn.commit()
+    finalize_comments(conn, [platform])
     close_conn()
 
     dw_load()

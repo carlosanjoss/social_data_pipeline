@@ -33,11 +33,13 @@ class TwitterConnector(BaseConnector):
                 continue
 
             tweets = envelope if isinstance(envelope, list) else envelope.get("tweets", [])
+            collected_at = envelope.get("collected_at") if isinstance(envelope, dict) else None
+            envelope_group = envelope.get("group") if isinstance(envelope, dict) else None
             for tweet in tweets:
-                yield tweet, json_file.name
+                yield tweet, json_file.name, collected_at, envelope_group
 
     def iter_posts(self) -> Iterator[dict]:
-        for raw, source_file in self._iter_raw_tweets():
+        for raw, source_file, collected_at, envelope_group in self._iter_raw_tweets():
             tweet_id = str(raw.get("tweet_id") or raw.get("id") or raw.get("id_str") or "")
             if not tweet_id:
                 logger.warning("twitter_no_id", source=source_file)
@@ -45,7 +47,7 @@ class TwitterConnector(BaseConnector):
 
             # tweet-harvest does not export in_reply_to_status_id; use group_name
             # "post_especifico" = replies scraped from a specific post thread
-            group = raw.get("group_name") or ""
+            group = raw.get("group_name") or envelope_group or ""
             is_reply = group == "post_especifico"
             content_type = "reply" if is_reply else "tweet"
 
@@ -55,6 +57,7 @@ class TwitterConnector(BaseConnector):
                 "content_type":  content_type,
                 "source_system": "twitter_scraper_project",
                 "source_file":   source_file,
+                "collected_at":  collected_at,
                 "raw":           raw,
                 "normalized": {
                     # tweet-harvest uses 'content', not 'full_text'/'text'
@@ -91,6 +94,7 @@ class TwitterConnector(BaseConnector):
 
             replies = envelope if isinstance(envelope, list) else envelope.get("replies", [])
             parent_tweet_id = envelope.get("parent_tweet_id") if isinstance(envelope, dict) else None
+            collected_at = envelope.get("collected_at") if isinstance(envelope, dict) else None
 
             for raw in replies:
                 tweet_id = str(raw.get("tweet_id") or raw.get("id") or "")
@@ -105,6 +109,7 @@ class TwitterConnector(BaseConnector):
                     "content_type": "reply",
                     "source_system": "twitter_scraper_project",
                     "source_file":  json_file.name,
+                    "collected_at": collected_at,
                     "raw":          raw,
                     "normalized": {
                         "text":            raw.get("content") or raw.get("full_text") or raw.get("text"),

@@ -20,17 +20,18 @@ class Settings(BaseSettings):
     redis_uri: str = "redis://localhost:6379/0"
 
     # Caminhos dos scrapers
-    reddit_data_path: Path = Path("../reddit_scrapper/src/reddit_pipeline/data")
+    reddit_data_path: Path = Path("../../scrappers/reddit_scrapperv2academic/src/reddit_pipeline/data")
     # PostgreSQL próprio do projeto irmão ../reddit_pipeline. Quando a URI não
     # é informada, o conector lê DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD
     # do arquivo abaixo.
     reddit_pipeline_enabled: bool = True
     reddit_pipeline_uri: str | None = None
     reddit_pipeline_env_path: Path = Path("../reddit_pipeline/.env")
-    twitter_data_path: Path = Path("../twitter_scraper_project/data/json")
-    youtube_data_path: Path = Path("../youtube_scraper/data")
-    facebook_data_path: Path = Path("../facebook_scrapper/data/output")
-    tiktok_data_path: Path = Path("../tiktok_scrapper/data")
+    twitter_data_path: Path = Path("../../scrappers/twitter_scrapper_project/data/json")
+    youtube_data_path: Path = Path("../../scrappers/youtube_scrapper/data")
+    facebook_data_path: Path = Path("../../scrappers/facebook_scrapper/data/output")
+    instagram_data_path: Path = Path("../../scrappers/instagram_scrapper/data")
+    tiktok_data_path: Path = Path("../../scrappers/tiktok_scrapper/data")
     farol_exports_path: Path = Path("../farol_digital_json_api/exports")
 
     # Pipeline

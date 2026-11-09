@@ -27,6 +27,14 @@ como português, persistidos com `language = 'pt-BR'`. Não existe limite de dat
 `published_at` pode conter qualquer data ou ser nulo. Uma restrição `CHECK`
 impede que cargas futuras gravem outro idioma.
 
+**Posts-âncora (`is_anchor = TRUE`).** Um comentário português pode pertencer a
+um post cujo texto não foi detectado como português (títulos curtos ou em
+MAIÚSCULAS enganam o `langdetect`) ou que não tem texto nenhum. Para não deixar
+o comentário órfão, o pipeline reinsere esse post **apenas como âncora da FK**,
+marcado com `is_anchor = TRUE`, guardando o idioma real detectado. O escopo
+pt-BR continua valendo para o corpus (`is_anchor = FALSE`) e para todos os
+comentários; a `CHECK` correspondente é `is_anchor OR language = 'pt-BR'`.
+
 ---
 
 ## Pré-requisitos
@@ -137,6 +145,16 @@ Normaliza os dados do MongoDB e carrega no PostgreSQL com schema IS-A. Nesta
 fronteira, o pipeline detecta o idioma do texto e descarta somente o que não é
 português. Não há filtro temporal.
 
+A detecção de idioma (`langdetect`, CPU-bound) roda em um pool de processos com
+`cpus − 1` workers — o resultado é idêntico ao modo sequencial (mesmo
+`decide_target`, seed fixa), só muito mais rápido em corpora grandes. Para
+ajustar:
+
+```powershell
+# Forçar um número fixo de workers (0 ou 1 desliga o paralelismo)
+$env:LOAD_WORKERS = "8"; python -m pipelines.load_postgres
+```
+
 ```powershell
 # Todas as plataformas
 python -m pipelines.load_postgres
@@ -145,7 +163,10 @@ python -m pipelines.load_postgres
 python -m pipelines.load_postgres --platforms reddit twitter
 ```
 
-Resolve automaticamente as FKs entre comentários e posts ao final.
+Resolve automaticamente as FKs entre comentários e posts ao final e, antes
+disso, recupera os **posts-âncora**: comentários cujo post pai é português/não
+tem texto mas foi descartado na fronteira de idioma passam a ter o pai
+reinserido (`is_anchor = TRUE`) e o `post_pk` resolvido.
 
 Para auditar as garantias do banco:
 
@@ -154,7 +175,8 @@ Get-Content database/postgres/audit_final_scope.sql |
   docker exec -i radar_postgres psql -U radar -d radar_odio
 ```
 
-As duas linhas da primeira consulta devem mostrar `violacoes = 0`.
+As linhas `comments` e `posts (corpus)` devem mostrar `violacoes = 0`. A linha
+`posts (âncora)` não é violação — são os pais reinseridos só para sustentar a FK.
 
 ### Etapa 3 — Data Warehouse: PostgreSQL → DuckDB
 
@@ -169,6 +191,83 @@ python -m warehouse.load --report
 ```
 
 O arquivo DuckDB fica em `data/radar_odio.duckdb`.
+
+---
+
+## Normalização por período (tabela dedicada)
+
+`normalize_periodo.py` copia os registros de `posts`/`comments` cujo
+`collected_at` cai num período configurável para uma tabela dedicada, aplicando
+o pré-processamento e a anonimização do **Radar Ódio v0.1**.
+
+**Como usar:** edite o bloco `CONFIGURAÇÃO` no topo do script e rode.
+
+```python
+PERIODO_INICIO = "2026-09-30"   # inclusivo
+PERIODO_FIM    = "2026-10-06"   # exclusivo: inclui todo o dia 05/10
+FUSO_HORARIO   = "UTC"          # ou "America/Sao_Paulo"
+
+# "published_at" → data do CONTEÚDO   |   "collected_at" → data da COLETA
+COLUNA_PERIODO = "published_at"
+
+TABELA_DESTINO = "periodo_eleicoes_1_turno"
+MANTER_APENAS_O_PERIODO = True
+```
+
+```powershell
+.venv311\Scripts\python.exe normalize_periodo.py
+
+# ou por linha de comando, sem editar o arquivo
+.venv311\Scripts\python.exe normalize_periodo.py --inicio 2026-10-01 --fim 2026-11-01
+.venv311\Scripts\python.exe normalize_periodo.py --coluna-periodo collected_at
+.venv311\Scripts\python.exe normalize_periodo.py --plataformas youtube twitter
+.venv311\Scripts\python.exe normalize_periodo.py --fuso America/Sao_Paulo
+```
+
+### Sincronização do período (não usa TRUNCATE)
+
+Com `MANTER_APENAS_O_PERIODO = True` (padrão) a tabela passa a refletir
+**exatamente** o período configurado: faz upsert dos registros que entram no
+período e apaga os que ficaram de fora.
+
+A remoção é um `DELETE` — **não** `TRUNCATE` — justamente para **preservar os IDs
+das linhas que permanecem**. Isso importa porque a tabela
+`periodo_eleicoes_1_turno_bert` (pipeline `bert_radar_odio/`) referencia
+`id` com `ON DELETE CASCADE`: linhas que saem do período levam suas inferências
+junto; linhas que ficam mantêm as suas.
+
+> ⚠️ Antes de rodar com um período diferente, **pare o pipeline de inferência**
+> (`bert_radar_odio/run_resto.py`). Escrever enquanto a recarga remove/insere
+> linhas gera conflito de lock e pode levar a deadlock.
+
+Chamar com `--acumular` desliga a remoção (só faz upsert).
+
+### O que o texto sofre
+
+Normalização (`services/text_normalization.py`): Unicode **NFC**; `\r\n` e `\r`
+→ `\n`; `\t` → espaço; colapso de 2+ espaços ASCII. **Nada mais é alterado** —
+caixa, pontuação, emojis, hashtags, erros de digitação, abreviações e `U+FFFD`
+são preservados; sem lowercase, stemming, lematização, remoção de stopwords,
+correção ortográfica ou tradução.
+
+Anonimização, nesta ordem: marcadores legados (`[URL]`→`<URL>` etc.) → URLs →
+`<EMAIL>` → CPF formalmente válido → `<ID>` → telefone validado → `<PHONE>` →
+menções → `<USER>`. Telefone segue a regra conservadora (DDD brasileiro válido,
+celular de 9 dígitos começando por `9`, fixo só com evidência estrutural,
+separadores apenas espaço/ponto/hífen, CPF antes de telefone).
+
+### Colunas da tabela
+
+`id`, `kind` (`post`|`comment`), `source_id`, `platform`, `content_type`,
+`external_id`, `post_external_id`, `parent_external_id`, `author`, `title`,
+`url`, `language`, `is_anchor`, `published_at`, `collected_at`, `text_raw`
+(**bruto, preservado sem alterações**), `text_normalized`, `normalized_at`.
+
+### Validação automática (ao final de cada execução)
+
+Confere registros lidos = gravados, nenhum texto esvaziado, ausência de `\r`,
+`\t` e espaços duplos, e igualdade de contagem de emojis e hashtags antes/depois.
+Se algo falhar, o script sai com código 1 e lista o motivo.
 
 ---
 
@@ -286,17 +385,29 @@ Os arquivos lidos pelo pipeline ficam nos caminhos configurados no `.env`:
 
 ## Contagens atuais (última carga)
 
-| Nível | Plataforma | Posts/mensagens | Comentários |
-|---|---:|---:|---:|
-| MongoDB (raw, sem filtro linguístico) | Todas | 254.907 | 279.252 |
-| PostgreSQL (`pt-BR`, sem limite de data) | Todas | 197.509 | 204.396 |
-| PostgreSQL | Facebook | 64 | 34.527 |
-| PostgreSQL | Reddit | 3.300 | 30.923 |
-| PostgreSQL | Telegram | 99.813 | 0 |
-| PostgreSQL | TikTok | 1 | 2 |
-| PostgreSQL | Twitter | 1.051 | 16.346 |
-| PostgreSQL | WhatsApp | 93.235 | 0 |
-| PostgreSQL | YouTube | 45 | 122.598 |
+Carga executada em 06/10/2026 (`python -m pipelines.ingest_historical` +
+`python -m pipelines.load_postgres`), com Instagram incluído, detecção de idioma
+paralelizada e recuperação de posts-âncora. Auditoria de escopo: `violacoes = 0`
+em `comments` e em `posts (corpus)`.
+
+| Nível | Plataforma | Posts (corpus) | Posts (âncora) | Comentários |
+|---|---:|---:|---:|---:|
+| MongoDB (raw, sem filtro linguístico) | Todas | 297.364 | — | 4.885.274 |
+| PostgreSQL (`pt-BR`, sem limite de data) | Todas | 226.356 | 3.923 | 3.588.752 |
+| PostgreSQL | Facebook | 912 | 301 | 152.072 |
+| PostgreSQL | Instagram | 4.493 | 256 | 64.167 |
+| PostgreSQL | Reddit | 8.144 | 357 | 119.207 |
+| PostgreSQL | Telegram | 99.813 | 0 | 0 |
+| PostgreSQL | TikTok | 3.936 | 1.519 | 261.896 |
+| PostgreSQL | Twitter | 5.852 | 313 | 62.049 |
+| PostgreSQL | WhatsApp | 93.235 | 0 | 0 |
+| PostgreSQL | YouTube | 9.971 | 1.177 | 2.929.361 |
+
+Comentários com `post_pk` resolvido: **3.583.981 de 3.588.752 (99,87%)**. Os
+4.771 órfãos restantes são todos do Twitter: 3.818 sob 207 tweets que não existem
+no MongoDB (nunca coletados) e 953 registros de um gabarito de anotação sem
+`post_external_id` na origem.
+
 
 WhatsApp tem 122.092 mensagens brutas e Telegram tem 123.362 no MongoDB. No PostgreSQL,
 somente as mensagens detectadas como português são mantidas. Como os JSONs dessas
@@ -367,9 +478,13 @@ Se preferir rodar em horários fixos em vez de monitorar por mudanças, use o Ag
 
 ```powershell
 # Cria uma tarefa que roda o pipeline todo dia às 06h
+$projectRoot = (Resolve-Path ".\social_data_pipeline").Path
+$pythonPath = Join-Path $projectRoot ".venv311\Scripts\python.exe"
+$watcherPath = Join-Path $projectRoot "watcher.py"
 $action = New-ScheduledTaskAction `
-    -Execute "powershell.exe" `
-    -Argument "-NonInteractive -Command `"cd 'C:\Users\carlo\OneDrive\Documents\ESTUDOS\MESTRADO\Trabalho Radar Ódio\social_data_pipeline'; .venv\Scripts\Activate.ps1; python watcher.py --once`""
+    -Execute $pythonPath `
+    -Argument "`"$watcherPath`" --once" `
+    -WorkingDirectory $projectRoot
 $trigger = New-ScheduledTaskTrigger -Daily -At "06:00"
 Register-ScheduledTask -TaskName "RadarOdio-Pipeline" -Action $action -Trigger $trigger
 ```
